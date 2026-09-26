@@ -38,6 +38,9 @@ const PICK_TYPES = [
   'text/plain',
 ];
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+// Raw bytes per chunk — must match the backend's CHUNK_BYTES so every
+// request stays under small serverless payload caps (~4.5MB on Vercel).
+const CHUNK_BYTES = Math.floor(2.5 * 1024 * 1024);
 
 const MODES: { key: Mode; label: string }[] = [
   { key: 'text', label: 'Text' },
@@ -82,6 +85,7 @@ export default function Home() {
   const [result, setResult] = useState('');
   const [resultTitle, setResultTitle] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const router = useRouter();
 
   const apiError = (error: any) => {
@@ -148,6 +152,32 @@ export default function Home() {
     }
   };
 
+  // Read the picked document as raw bytes (works on native + web).
+  const readDocBytes = async (): Promise<Uint8Array> => {
+    if (Platform.OS === 'web') {
+      // On web the picker gives us a real File object.
+      const webFile: unknown = doc!.file;
+      if (webFile instanceof Blob) {
+        return new Uint8Array(await webFile.arrayBuffer());
+      }
+      throw new Error('Could not read the picked file on web.');
+    }
+    const file = new File(doc!.uri);
+    return new Uint8Array(await file.arrayBuffer());
+  };
+
+  const bytesToBase64 = (bytes: Uint8Array): string => {
+    let binary = '';
+    const slice = 0x8000;
+    for (let i = 0; i < bytes.length; i += slice) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + slice));
+    }
+    return btoa(binary);
+  };
+
+  // Chunked upload: init -> chunk (repeat) -> complete. Each request stays
+  // small so hosts with tiny payload caps (Vercel ~4.5MB) still accept the
+  // full 10MB file. Shows per-chunk progress while uploading.
   const handleUpload = async () => {
     if (!doc) {
       Alert.alert('Error', 'Please pick a document first');
@@ -156,35 +186,47 @@ export default function Home() {
     setBusy('doc');
     setResult('');
     setResultTitle('');
+    setUploadProgress(null);
     try {
       const token = await AsyncStorage.getItem('token');
-      const form = new FormData();
-      if (Platform.OS === 'web') {
-        // On web the picker gives us a real File object.
-        const webFile: unknown = doc.file;
-        if (webFile instanceof Blob) {
-          form.append('document', webFile, doc.name);
-        } else {
-          Alert.alert('Error', 'Could not read the picked file on web.');
-          return;
-        }
-      } else {
-        form.append('document', {
-          uri: doc.uri,
-          name: doc.name,
-          type: doc.mimeType || mimeFromName(doc.name),
-        } as any);
+      const auth = { Authorization: `Bearer ${token}` };
+      const raw = await readDocBytes();
+      if (raw.length > MAX_FILE_BYTES) {
+        Alert.alert('File too large', 'Please pick a file under 10 MB.');
+        return;
       }
-      form.append('task', task);
-      const response = await axios.post(`${API_URL}/api/ai/upload`, form, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setResult(response.data.result);
-      setResultTitle(response.data.filename ? `Analysis of ${response.data.filename}` : 'Document analysis');
+      const base64 = bytesToBase64(raw);
+      const totalChunks = Math.max(1, Math.ceil(raw.length / CHUNK_BYTES));
+      const initRes = await axios.post(
+        `${API_URL}/api/ai/upload/init`,
+        { filename: doc.name, fileSize: raw.length, totalChunks },
+        { headers: auth }
+      );
+      const uploadId: string = initRes.data.uploadId;
+      // Slice the base64 at multiples of 4 chars so every piece decodes cleanly.
+      const b64ChunkLen = Math.floor(CHUNK_BYTES / 3) * 4;
+      for (let i = 0; i < totalChunks; i++) {
+        setUploadProgress({ done: i, total: totalChunks });
+        const piece = base64.slice(i * b64ChunkLen, (i + 1) * b64ChunkLen);
+        await axios.post(
+          `${API_URL}/api/ai/upload/chunk`,
+          { uploadId, index: i, data: piece },
+          { headers: auth }
+        );
+      }
+      setUploadProgress({ done: totalChunks, total: totalChunks });
+      const doneRes = await axios.post(
+        `${API_URL}/api/ai/upload/complete`,
+        { uploadId, task },
+        { headers: auth }
+      );
+      setResult(doneRes.data.result);
+      setResultTitle(doneRes.data.filename ? `Analysis of ${doneRes.data.filename}` : 'Document analysis');
     } catch (error: any) {
       apiError(error);
     } finally {
       setBusy(null);
+      setUploadProgress(null);
     }
   };
 
@@ -421,6 +463,11 @@ export default function Home() {
             )}
             {renderTaskChips(task, setTask)}
             {actionButton('doc', 'Upload & Analyze', handleUpload)}
+            {uploadProgress && (
+              <Text style={styles.progressText}>
+                Uploading… {uploadProgress.done}/{uploadProgress.total} parts
+              </Text>
+            )}
           </View>
         )}
 
@@ -623,6 +670,7 @@ const styles = StyleSheet.create({
   },
   fileName: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
   fileSize: { color: '#aaa', fontSize: 12 },
+  progressText: { color: '#c4b5fd', fontSize: 13, textAlign: 'center', marginTop: 8 },
   resultTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   resultScroll: { maxHeight: 340, marginBottom: 14 },
   resultText: { color: '#e8e8f0', fontSize: 15, lineHeight: 23 },
