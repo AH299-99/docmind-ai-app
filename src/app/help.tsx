@@ -84,6 +84,21 @@ export default function HelpScreen() {
             </ThemedText>
           </Collapsible>
 
+          <Collapsible title="Upload documents">
+            <ThemedText type="small">Tap the Document tab on the Home screen, then “Pick document” and choose a PDF, DOCX, or TXT file (up to 10 MB).</ThemedText>
+            <ThemedText type="small">Pick a task — Summarize, Explain, or Analyze — then tap “Upload & Analyze”. The file is sent to the DocMind API, which reads the text inside and returns the result.</ThemedText>
+          </Collapsible>
+
+          <Collapsible title="Generate assignments">
+            <ThemedText type="small">Tap the Assignment tab on the Home screen. Type your topic, pick a level (School, College, or University) and a length (Short, Medium, or Long), and add any extra instructions if you want.</ThemedText>
+            <ThemedText type="small">Tap “Generate Assignment” and DocMind AI writes the full assignment for you. You can download it right from the result card.</ThemedText>
+          </Collapsible>
+
+          <Collapsible title="Download results">
+            <ThemedText type="small">Every result card has three download buttons: PDF, Word, and TXT.</ThemedText>
+            <ThemedText type="small">Tapping one sends the result to the DocMind API, which builds the file for you. On phones it opens the share sheet so you can save it to your files or send it to another app; on the web it downloads straight to your computer.</ThemedText>
+          </Collapsible>
+
           <Collapsible title="Your privacy">
             <ThemedText type="small">
               You need an account to use DocMind AI. Your login stays saved on this device, and the text you submit is sent to the DocMind API so the AI can process it.
