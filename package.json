@@ -1,5 +1,9 @@
 {
   "name": "docmind-ai-app",
+  "author": "Azmat Hayat",
+  "description": "DocMind AI mobile + web app - paste text and get AI summaries, explanations, and insights (Expo, React Native, TypeScript).",
+  "keywords": ["expo", "react-native", "typescript", "ai", "gemini", "mobile"],
+  "repository": {"type": "git", "url": "https://github.com/AH299-99/docmind-ai-app.git"},
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
